@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Routes4</string>
+    <string name="title_activity_maps">Map</string>
+    <string name="api_key">AIzaSyBS8mzDVBrttyB_N_YvIQKMJo-kyOtkP1I</string>
+</resources>
