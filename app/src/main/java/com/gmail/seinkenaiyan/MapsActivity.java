@@ -2,24 +2,34 @@ package com.gmail.seinkenaiyan;
 
 import android.Manifest;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
 import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.app.FragmentActivity;
+import android.os.Handler;
+import android.os.Looper;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
+import androidx.fragment.app.FragmentActivity;
 import android.os.Bundle;
-import android.support.v4.content.ContextCompat;
+import androidx.core.content.ContextCompat;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ProgressBar;
 import android.widget.Toast;
+import android.widget.Toolbar;
 
+import com.gmail.seinkenaiyan.models.Stage;
+import com.gmail.seinkenaiyan.models.StageLocation;
 import com.google.android.gms.location.LocationListener;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -29,6 +39,7 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
@@ -39,6 +50,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -47,6 +59,7 @@ import okhttp3.Callback;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.logging.HttpLoggingInterceptor;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback,
         GoogleApiClient.ConnectionCallbacks,
@@ -60,17 +73,21 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     Location mLastLocation;
     Marker mCurrentLocationMarker;
     int PROXIMITY_RADIUS= 1500;
-    double latitude, longitude;
     public static final int REQUEST_LOCATION_CODE = 99;
-    private OkHttpClient client = new OkHttpClient();
+    private OkHttpClient client;
+    private HttpLoggingInterceptor httpLoggingInterceptor;
     private Button btnSearch;
-    String stages = "";
+    private Handler handler;
+    private ProgressBar progressBar;
 
 
     @Override
     //this class describes what happens when the map fragment is first created and displayed
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        httpLoggingInterceptor = new HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BODY);
+        client = new OkHttpClient.Builder().addInterceptor(httpLoggingInterceptor).build();
+        handler = new Handler(Looper.getMainLooper());
         //set to display layout in the xml file-activity_maps which contains the map fragment
         setContentView(R.layout.activity_maps);
         //checking android version to avoid unsupported versions that may make the app crash
@@ -83,10 +100,17 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
         btnSearch = (Button)findViewById(R.id.B_search);
+        progressBar = (ProgressBar)findViewById(R.id.progress_horizontal);
         btnSearch.setOnClickListener(v -> {
             EditText edtLocation = (EditText)findViewById(R.id.tf_location);
             if(!TextUtils.isEmpty(edtLocation.getText())){
+                if(progressBar.getVisibility() == View.GONE){
+                    progressBar.setVisibility(View.VISIBLE);
+                }
+                mMap.clear();
                 getStages(edtLocation.getText().toString().trim());
+                progressBar.setVisibility(View.GONE);
+
             }else {
                 Toast.makeText(MapsActivity.this,"Enter Location",Toast.LENGTH_SHORT).show();
             }
@@ -119,67 +143,21 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 return;
         }
     }
-    public void onClick() {
-//        //check if user clicked on search button or not
-//        switch (v.getId()) {
-//            case R.id.B_search:
-//            {
-//                EditText tf_location = (EditText) findViewById(R.id.tf_location);
-//                String location = tf_location.getText().toString();
-//                List<Address> addressList = null;
-//                MarkerOptions mo = new MarkerOptions();
-//
-//                if (!location.equals("")) {
-//                    //creating an object(geocoder)for the Geocoder class
-//                    //converts addresses to geograpgical coordinates
-//                    Geocoder geocoder = new Geocoder(this);
-//                    try {
-//                        addressList = geocoder.getFromLocationName(location, 5);
-//                    } catch (IOException e) {
-//                        e.printStackTrace();//helps trace the exception; used e.g. for tracing bugs
-//                    }
-//
-//                    //add marker for locations obtained (Addresses returned)
-//                    for (int i = 0; i < addressList.size(); i++) {
-//                        Address myAddress = addressList.get(i);
-//                        LatLng latlng = new LatLng(myAddress.getLatitude(), myAddress.getLongitude());
-//                        mo.position(latlng);    //sets position
-//                        mo.title("Your search result");
-//                        mMap.addMarker(mo);     //adds marker to the map
-//
-//                        //makes marker focus on the last position given
-//                        mMap.animateCamera(CameraUpdateFactory.newLatLng(latlng));
-//
-//                    }
-//                }
-//            }
-//            break;
-//            //setting up button that displays nearby stages
-//            case R.id.B_stages:
-//            {
-//                mMap.clear();//removes all the markers from the map
-//                String bus_stop = "bus_stop";
-//                String url = getUrl(latitude, longitude, bus_stop);
-//                Object dataTransfer[] = new Object[2];
-//                dataTransfer[0]=mMap;
-//                dataTransfer[1]=url;
-//
-//                GetNearbyPlacesData getNearbyPlacesData = new GetNearbyPlacesData();
-//                getNearbyPlacesData.execute(dataTransfer);
-//                Toast.makeText(MapsActivity.this, "Showing nearby bus stops",Toast.LENGTH_LONG).show();
-//                break;
-//            }
-//        }
-    }
     private void getStages(String locationText){
         Geocoder geocoder = new Geocoder(this, Locale.getDefault());
-        try {
-            List<Address> addressList= geocoder.getFromLocationName(locationText,5);
-            for(Address address :  addressList){
+        List<Address> addressList = new ArrayList<Address>();
+        try{
+            addressList = geocoder.getFromLocationName(locationText,1);
+        } catch (IOException ioException){
+            ioException.printStackTrace();
+        }
+        if(!addressList.isEmpty()) {
+            for (Address address : addressList) {
+                Log.d("Address", address.getAdminArea());
                 double latitude = address.getLatitude();
                 double longitude = address.getLongitude();
                 Request request = new Request.Builder()
-                        .url(getUrl(latitude,longitude,"bus_station"))
+                        .url(getUrl(latitude, longitude, "bus_station"))
                         .get()
                         .addHeader("cache-control", "no-cache")
                         .build();
@@ -187,51 +165,73 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     @Override
                     public void onFailure(Call call, IOException e) {
                         Log.d("Response", "Failed");
-
                     }
 
                     @Override
                     public void onResponse(Call call, Response response) throws IOException {
 
-                        if(response.isSuccessful()){String jsonData = response.body().string();
-                            Log.d("Response", jsonData);
+                        if (response.isSuccessful()) {
+                            ArrayList<Stage> stageArrayList = new ArrayList<>();
+                            MarkerOptions markerOptions = new MarkerOptions();
+                            String jsonData = response.body().string();
                             try {
                                 JSONObject jsonObject = new JSONObject(jsonData);
-                                JSONArray jsonArray = new JSONArray();
-                                jsonArray = jsonObject.getJSONArray("results");
+                                JSONArray jsonArray = jsonObject.getJSONArray("results");
                                 for (int i = 0; i < jsonArray.length(); i++) {
                                     JSONObject object = jsonArray.getJSONObject(i);
-                                    StringBuilder sb = new StringBuilder();
-                                    sb.append(object.getString("name"+"\n"));
-                                    stages = sb.toString();
-
+                                    Stage stage = new Stage();
+                                    stage.setStageName(object.getString("name"));
+                                    stage.setStageLocation(new StageLocation(object.getJSONObject("geometry").getJSONObject("location").getDouble("lat"),
+                                            object.getJSONObject("geometry").getJSONObject("location").getDouble("lng")));
+                                    stage.setIconURL(object.getString("icon"));
+                                    stage.setVicinity(object.getString("vicinity"));
+                                    stageArrayList.add(stage);
                                 }
+                                handler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        if (stageArrayList.size() > 0) {
+                                            for (Stage stage : stageArrayList) {
+                                                LatLng latlng = new LatLng(stage.getStageLocation().getLatitude(), stage.getStageLocation().getLongitude());
+                                                markerOptions.position(latlng);    //sets position
+                                                markerOptions.title(stage.getStageName());
+                                                mMap.addMarker(markerOptions);     //adds marker to the map
+                                                //makes marker focus on the last position given
+                                                mMap.animateCamera(CameraUpdateFactory.newLatLng(latlng));
+                                            }
+                                        }
+
+                                    }
+                                });
                             } catch (JSONException e) {
                                 e.printStackTrace();
                             }
+
                         }
                     }
                 });
-//                AlertDialog.Builder alertDialog = new AlertDialog.Builder(MapsActivity.this)
-//                        .setTitle("STAGES AVAILABLE")
-//                        .setMessage(stages)
-//                        .setCancelable(true);
-//                alertDialog.show();
             }
-
-        } catch (IOException e) {
-            e.printStackTrace();
+        }else{
+            Toast.makeText(this,"Location not found", Toast.LENGTH_SHORT).show();
         }
 
+
     }
-    //using google places API to
+
+    /**
+     * This function builds the url to be used to send the request to google places API
+     * @param latitude
+     * @param longitude
+     * @param nearbyPlace
+     * @return URL : String
+     */
     private String getUrl(double latitude, double longitude, String nearbyPlace)
     {//string builder class creates modifiable string
         StringBuilder googlePlaceUrl = new StringBuilder("https://maps.googleapis.com/maps/api/place/nearbysearch/json?");
         googlePlaceUrl.append("location="+latitude+","+longitude);
         googlePlaceUrl.append("&radius="+PROXIMITY_RADIUS);
         googlePlaceUrl.append("&type="+nearbyPlace);
-        googlePlaceUrl.append("&key="+getString(R.string.api_key));
+        googlePlaceUrl.append("&key="+"AIzaSyBS8mzDVBrttyB_N_YvIQKMJo-kyOtkP1I");
         return googlePlaceUrl.toString();
     }
 
@@ -346,5 +346,20 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     @Override
     public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
 
+    }
+
+    /**
+     *
+     * @param context
+     * @param vectorResId
+     * @return
+     */
+    private BitmapDescriptor bitmapDescriptorFromVector(Context context, int vectorResId) {
+        Drawable vectorDrawable = ContextCompat.getDrawable(context, vectorResId);
+        vectorDrawable.setBounds(0, 0, vectorDrawable.getIntrinsicWidth(), vectorDrawable.getIntrinsicHeight());
+        Bitmap bitmap = Bitmap.createBitmap(vectorDrawable.getIntrinsicWidth(), vectorDrawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        vectorDrawable.draw(canvas);
+        return BitmapDescriptorFactory.fromBitmap(bitmap);
     }
 }
